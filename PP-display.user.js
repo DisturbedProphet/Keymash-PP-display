@@ -11,7 +11,6 @@
 
 (async function () {
     const star_ratings = await fetch('https://raw.githubusercontent.com/DisturbedProphet/Keymash-PP-display/main/starratings.json').then(res => res.json())
-    alert(star_ratings);
 
     //This code is from https://github.com/duhby/typing-pp and will likely be subject to change as the PP system is developed further
     function get_score(stars, wpm) {
