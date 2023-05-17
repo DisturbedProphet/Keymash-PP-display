@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Auto display match data & PP Display
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Automatically displays match data after completing a race and displays match PP scores
 // @author       Disturbed
 // @match        https://keymash.io/*
@@ -12,7 +12,7 @@
 (async function () {
     let star_ratings = await fetch('https://raw.githubusercontent.com/DisturbedProphet/Keymash-PP-display/main/starratings.json').then(res => res.json())
 
-    //This code is from https://github.com/duhby/typing-pp and will likely be subject to change as the PP system is developed further
+    //This code is from https://github.com/duhby/typing-pp and is potentially subject to change as the PP system is developed further
     function get_score(stars, wpm) {
         return 35 * stars * curve_multiplier(wpm);
     }
@@ -53,41 +53,71 @@
         });
     }
 
+    //returns a promise that resolves once a given element is removed
+    function waitForElmToDisappear(selector) {
+        return new Promise(resolve => {
+            if (!document.querySelector(selector)) {
+                return resolve();
+            }
 
-    while (true) {
+            const observer = new MutationObserver(mutations => {
+                if (!document.querySelector(selector)) {
+                    resolve();
+                    observer.disconnect();
+                }
+            });
 
-        //delays the program until the countdown starts
-        await waitForElm("#countdownTimer")
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        });
+    }
 
-        //waits until the test is finished and automatically clicks the match button to display the match stats
-        let matchButton = await waitForElm('#matchEnd > div > button:nth-child(2)').then(elm => elm.click());
+
+    async function set_pp() {
+        let wpmElm = await waitForElm("#matchEnd > div > div > div > div > div > div:nth-child(1) > div:nth-child(2) > span");
 
         let quote = document.querySelector('#matchEnd > div:nth-child(2) > div:nth-child(2) > div > div:nth-child(2) > div:nth-child(2)').innerText.split('\n').join(' ');
         let stars;
         try {
             stars = star_ratings[quote].rating;
         } catch (err) {
-            console.log(star_ratings);
-            console.log(quote)
+            //detect dictionary match and use appropriate star rating
+            if (document.querySelector("#matchEnd > div > div > div > div > div > div > div:nth-child(1) > div:nth-child(2)").innerText == "DICTIONARY") {
+                stars = 4.8
+            }
         }
 
         //clone the WPM display div and replaces the contents with the proper PP data
-        let ppDiv = document.querySelector("#matchEnd > div.bg-black.bg-opacity-20.h-auto.lg\\:min-h-128.rounded-b-2xl.shadow-lg.p-4.sm\\:p-6.md\\:p-8.relative > div.text-white > div > div.col-span-full.md\\:col-span-1 > div > div:nth-child(2)").cloneNode(true);
-        let statsContainer = document.querySelector("#matchEnd > div.bg-black.bg-opacity-20.h-auto.lg\\:min-h-128.rounded-b-2xl.shadow-lg.p-4.sm\\:p-6.md\\:p-8.relative > div.text-white > div > div.col-span-full.md\\:col-span-1 > div");
+        let ppDiv = document.querySelector("#matchEnd > div > div > div > div > div > div:nth-child(2)").cloneNode(true);
+        let statsContainer = document.querySelector("#matchEnd > div > div > div > div > div");
         ppDiv.children[0].innerText = "Performance Points";
         statsContainer.appendChild(ppDiv);
 
-        let wpmElm = await waitForElm("#matchEnd > div > div > div > div > div > div:nth-child(1) > div:nth-child(2) > span");
-
+        //observer dynamically updates the PP according with the WPM to mimic the animation
         const observer = new MutationObserver((mutationsList, observer) => {
             for (let mutation of mutationsList) {
                 if (mutation.type === 'childList' && mutation.target === wpmElm && mutation.addedNodes.length) {
                     ppDiv.children[1].innerText = get_score(stars, parseFloat(wpmElm.innerText)).toFixed(2);
-                    console.log(wpmElm)
                 }
             }
         });
 
         observer.observe(wpmElm, { childList: true, subtree: true });
+    }
+
+
+    async function autoclickMatch() {
+        await waitForElm('#matchEnd > div > button:nth-child(2)').then(elm => elm.click())
+        await waitForElmToDisappear('#matchEnd > div > button:nth-child(2)').then(autoclickMatch)
+    }
+    autoclickMatch();
+
+    while (true) {
+        let wpmSelector = "#matchEnd > div > div > div > div > div > div:nth-child(1) > div:nth-child(2) > span";
+
+        await waitForElm(wpmSelector).then(set_pp);
+        await waitForElmToDisappear(wpmSelector);
     }
 })();
